@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 /******************************************************************************
 MIT License
 
@@ -27,6 +26,7 @@ Modifications Copyright (c) 2022 Advanced Micro Devices, Inc.
 All rights reserved.
 *******************************************************************************/
 #include <hip/hip_runtime.h>
+#include <hip/hip_fp16.h>
 #include "CudaUtils.h"
 #include "LRUCache.h"
 #include "cuttkernel.h"
@@ -47,8 +47,9 @@ __global__ void transposeTiled(
   const TensorConvInOut* RESTRICT glMbar,
   const T* RESTRICT dataIn, T* RESTRICT dataOut) {
 
+  constexpr int PADDING = (sizeof(T) < 4 ? (4 / sizeof(T)) : 1);
   // Shared memory
-  __shared__ T shTile[TILEDIM][TILEDIM+1];
+  __shared__ T shTile[TILEDIM][TILEDIM+PADDING];
 
   const int warpLane = threadIdx.x & (warpSize - 1);
   
@@ -584,7 +585,7 @@ int getNumActiveBlock(const int method, const int sizeofType, const LaunchConfig
   hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock, \
     transposePacked<TYPE, NREG>, numthread, lc.shmemsize)
       switch(lc.numRegStorage) {
-#define CALL(ICASE) case ICASE: if (sizeofType == 4) CALL0(float,  ICASE); if (sizeofType == 8) CALL0(double, ICASE); break
+#define CALL(ICASE) case ICASE: if (sizeofType == 2) CALL0(half,  ICASE); if (sizeofType == 4) CALL0(float,  ICASE); if (sizeofType == 8) CALL0(double, ICASE); break
 #include "calls.h"
       }
 #undef CALL
@@ -605,7 +606,7 @@ int getNumActiveBlock(const int method, const int sizeofType, const LaunchConfig
         exit(1);
       }
       int key_reg = (lc.numRegStorage - 1);
-      int key_type = (sizeofType == 4);
+      int key_type = sizeofType;
       unsigned long long int key = 
       (unsigned long long int)(lc.shmemsize/sizeofType)*MAX_NUMWARP*MAX_REG_STORAGE*MAX_NUMTYPE*numDevices + 
       (unsigned long long int)deviceID*MAX_NUMWARP*MAX_REG_STORAGE*MAX_NUMTYPE +
@@ -620,7 +621,7 @@ int getNumActiveBlock(const int method, const int sizeofType, const LaunchConfig
   hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock, \
     transposePackedSplit<TYPE, NREG>, numthread, lc.shmemsize)
       switch(lc.numRegStorage) {
-#define CALL(ICASE) case ICASE: if (sizeofType == 4) CALL0(float,  ICASE); if (sizeofType == 8) CALL0(double, ICASE); break
+#define CALL(ICASE) case ICASE: if (sizeofType == 2) CALL0(half,  ICASE); if (sizeofType == 4) CALL0(float,  ICASE); if (sizeofType == 8) CALL0(double, ICASE); break
 #include "calls.h"
       }
 #undef CALL
@@ -632,24 +633,34 @@ int getNumActiveBlock(const int method, const int sizeofType, const LaunchConfig
 
     case Tiled:
     {
-      if (sizeofType == 4) {
+      if (sizeofType == 2) {
+        hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
+          transposeTiled<half>, numthread, lc.shmemsize);
+      } else if (sizeofType == 4) {
         hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
           transposeTiled<float>, numthread, lc.shmemsize);
-      } else {
+      } else if (sizeofType == 8) {
         hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
           transposeTiled<double>, numthread, lc.shmemsize);
+      } else {
+        std::cerr << "Error executing tiled plan. Unsupported size " << sizeofType << std::endl;
       }
     }
     break;
 
     case TiledCopy:
     {
-      if (sizeofType == 4) {
+      if (sizeofType == 2) {
+        hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
+          transposeTiledCopy<half>, numthread, lc.shmemsize);
+      } else if (sizeofType == 4) {
         hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
           transposeTiledCopy<float>, numthread, lc.shmemsize);
-      } else {
+      } else if (sizeofType == 8) {
         hipOccupancyMaxActiveBlocksPerMultiprocessor(&numActiveBlock,
           transposeTiledCopy<double>, numthread, lc.shmemsize);
+      } else {
+        std::cerr << "Error executing tiled-copy plan. Unsupported size " << sizeofType << std::endl;
       }
     }
     break;
@@ -868,7 +879,7 @@ bool cuttKernel(cuttPlan_t& plan, void* dataIn, void* dataOut) {
     transposePacked<TYPE, NREG> <<< lc.numblock, lc.numthread, lc.shmemsize, plan.stream >>> \
       (ts.volMmk, ts.volMbar, ts.sizeMmk, ts.sizeMbar, \
       plan.Mmk, plan.Mbar, plan.Msh, (TYPE *)dataIn, (TYPE *)dataOut)
-#define CALL(ICASE) case ICASE: if (plan.sizeofType == 4) CALL0(float,  ICASE); if (plan.sizeofType == 8) CALL0(double, ICASE); break
+#define CALL(ICASE) case ICASE: if (plan.sizeofType == 2) CALL0(half,  ICASE); if (plan.sizeofType == 4) CALL0(float,  ICASE); if (plan.sizeofType == 8) CALL0(double, ICASE); break
 #include "calls.h"
         default:
         printf("cuttKernel no template implemented for numRegStorage %d\n", lc.numRegStorage);
@@ -887,7 +898,7 @@ bool cuttKernel(cuttPlan_t& plan, void* dataIn, void* dataOut) {
     transposePackedSplit<TYPE, NREG> <<< lc.numblock, lc.numthread, lc.shmemsize, plan.stream >>> \
       (ts.splitDim, ts.volMmkUnsplit, ts. volMbar, ts.sizeMmk, ts.sizeMbar, \
         plan.cuDimMm, plan.cuDimMk, plan.Mmk, plan.Mbar, plan.Msh, (TYPE *)dataIn, (TYPE *)dataOut)
-#define CALL(ICASE) case ICASE: if (plan.sizeofType == 4) CALL0(float,  ICASE); if (plan.sizeofType == 8) CALL0(double, ICASE); break
+#define CALL(ICASE) case ICASE: if (plan.sizeofType == 2) CALL0(half,  ICASE); if (plan.sizeofType == 4) CALL0(float,  ICASE); if (plan.sizeofType == 8) CALL0(double, ICASE); break
 #include "calls.h"
         default:
         printf("cuttKernel no template implemented for numRegStorage %d\n", lc.numRegStorage);
@@ -905,6 +916,7 @@ bool cuttKernel(cuttPlan_t& plan, void* dataIn, void* dataOut) {
        transposeTiled<TYPE> <<< lc.numblock, lc.numthread, 0, plan.stream >>> \
        (((ts.volMm - 1)/TILEDIM + 1), ts.volMbar, ts.sizeMbar, plan.tiledVol, plan.cuDimMk, plan.cuDimMm, \
          plan.Mbar, (TYPE *)dataIn, (TYPE *)dataOut)
+      if (plan.sizeofType == 2) CALL(half);
       if (plan.sizeofType == 4) CALL(float);
       if (plan.sizeofType == 8) CALL(double);
 #undef CALL
@@ -917,6 +929,7 @@ bool cuttKernel(cuttPlan_t& plan, void* dataIn, void* dataOut) {
       transposeTiledCopy<TYPE> <<< lc.numblock, lc.numthread, 0, plan.stream >>> \
       (((ts.volMm - 1)/TILEDIM + 1), ts.volMbar, ts.sizeMbar, plan.cuDimMk, plan.cuDimMm, plan.tiledVol, \
         plan.Mbar, (TYPE *)dataIn, (TYPE *)dataOut)
+      if (plan.sizeofType == 2) CALL(half);
       if (plan.sizeofType == 4) CALL(float);
       if (plan.sizeofType == 8) CALL(double);
 #undef CALL

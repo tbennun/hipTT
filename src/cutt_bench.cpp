@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
     arg_ok = false;
   }
 
-  if (elemsize != 4 && elemsize != 8) {
+  if (elemsize != 2 && elemsize != 4 && elemsize != 8) {
     arg_ok = false;
   }
 
@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
     printf("-measure         : use cuttPlanMeasure (default is cuttPlan)\n");
     printf("-plantimer       : planning is timed (default is no)\n");
     printf("-seed [int]      : seed value for random number generator (default is system timer)\n");
-    printf("-elemsize [int]  : size of elements in bytes, 4 or 8. (default is 8)\n");
+    printf("-elemsize [int]  : size of elements in bytes, 2/4/8. (default is 8)\n");
     printf("-dim ...         : space-separated list of dimensions\n");
     printf("-permutation ... : space-separated list of permutations\n");
     printf("-bench benchID   : benchmark to run\n");
@@ -156,7 +156,7 @@ int main(int argc, char *argv[]) {
   }
 
   hipCheck(hipDeviceReset());
-  if (elemsize == 4) {
+  if (elemsize == 2 || elemsize == 4) {
     hipCheck(hipDeviceSetSharedMemConfig(hipSharedMemBankSizeFourByte));
   } else {
     hipCheck(hipDeviceSetSharedMemConfig(hipSharedMemBankSizeEightByte));    
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
 
   timer = new cuttTimer(elemsize);
 
-  dataSize = (elemsize == 4) ? 420*MILLION : 370*MILLION;
+  dataSize = (elemsize != 8) ? 420*MILLION : 370*MILLION;
 
   // Allocate device data, 100M elements
   allocate_device<char>(&dataIn, dataSize*(size_t)elemsize);
@@ -196,14 +196,22 @@ int main(int argc, char *argv[]) {
   // }
 
   if (dimIn.size() > 0) {
-    bool ok = (elemsize == 4) ? bench_input<int>(dimIn, permutationIn) : bench_input<long long int>(dimIn, permutationIn);
+    bool ok;
+    if (elemsize == 2)
+      ok = bench_input<short>(dimIn, permutationIn);
+    else if (elemsize == 4)
+      ok = bench_input<int>(dimIn, permutationIn);
+    else if (elemsize == 8)
+      ok = bench_input<long long int>(dimIn, permutationIn);
+    else
+      ok = false;
     if (ok) goto benchOK;
     goto fail;
   }
 
   if (benchID == 3) {
-    if (elemsize == 4) {
-      printf("bench 3 not implemented for elemsize = 4\n");
+    if (elemsize != 8) {
+      printf("bench 3 not implemented for elemsize != 8\n");
       goto fail;
     }
     if (bench3(200*MILLION)) {
@@ -233,7 +241,15 @@ int main(int argc, char *argv[]) {
   }
 
   if (benchID/100 == 5) {
-    bool ok = (elemsize == 4) ? bench5<int>(200*MILLION, benchID % 100) : bench5<long long int>(200*MILLION, benchID % 100);
+    bool ok;
+    if (elemsize == 2)
+      ok = bench5<short>(200*MILLION, benchID % 100);
+    else if (elemsize == 4)
+      ok = bench5<int>(200*MILLION, benchID % 100);
+    else if (elemsize == 8)
+      ok = bench5<long long int>(200*MILLION, benchID % 100);
+    else
+      ok = false;
     if (ok) {
       printf("bench5:\n");
       for (auto it=timer->ranksBegin();it != timer->ranksEnd();it++) {
@@ -269,8 +285,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (benchID == 6) {
-    if (elemsize == 4) {
-      printf("bench 6 not implemented for elemsize = 4\n");
+    if (elemsize != 8) {
+      printf("bench 6 not implemented for elemsize != 8\n");
       goto fail;
     }
     if (bench6()) {
@@ -307,7 +323,15 @@ int main(int argc, char *argv[]) {
   }
 
   if (benchID == 7) {
-    bool ok = (elemsize == 4) ? bench7<int>() : bench7<long long int>();
+    bool ok;
+    if (elemsize == 2)
+      ok = bench7<short>();
+    else if (elemsize == 4)
+      ok = bench7<int>();
+    else if (elemsize == 8)
+      ok = bench7<long long int>();
+    else
+      ok = false;
     if (ok) {
       printf("bench7:\n");
       for (auto it=timer->ranksBegin();it != timer->ranksEnd();it++) {
@@ -344,7 +368,15 @@ int main(int argc, char *argv[]) {
 
   // Otherwise, do memcopy benchmark
   {
-    bool ok = (elemsize == 4) ? bench_memcpy<int>(benchID) : bench_memcpy<long long int>(benchID);
+    bool ok;
+    if (elemsize == 2)
+      ok = bench_memcpy<short>(benchID);
+    else if (elemsize == 4)
+      ok = bench_memcpy<int>(benchID);
+    else if (elemsize == 8)
+      ok = bench_memcpy<long long int>(benchID);
+    else
+      ok = false;
     if (ok) goto benchOK;
     goto fail;
   }
@@ -868,7 +900,7 @@ bool bench_memcpy(int numElem) {
     printf("vectorCopy %lf GB/s\n", timer.getAverage(1));
   }
 
-  {
+  if (sizeof(T) >= sizeof(float)) {
     cuttTimer timer(sizeof(T));
     for (int i=0;i < 4;i++) {
       set_device_array<T>((T *)dataOut, -1, numElem);

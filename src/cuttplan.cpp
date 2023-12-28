@@ -460,7 +460,8 @@ size_t TensorSplit::shmemAlloc(int sizeofType) const {
 
     case Tiled:
     {
-      vol = (TILEDIM+1)*TILEDIM*sizeofType;
+      const int PADDING = (sizeofType < 4) ? (4 / sizeofType) : 1;
+      vol = (TILEDIM+PADDING)*TILEDIM*sizeofType;
     }
     break;
 

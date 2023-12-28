@@ -63,7 +63,8 @@ __global__ void checkTransposeKernel(T* data, unsigned int ndata, int rank, Tens
       refVal += ((i/__shfl(tc.c,j)) % __shfl(tc.d,j))*__shfl(tc.ct,j);
     }
 
-    int dataVal = (dataValT & 0xffffffff)/(sizeof(T)/4);
+    constexpr int NUM_FLOATS = (sizeof(T) < 4) ? 1 : (sizeof(T)/4);
+    int dataVal = (dataValT & 0xffffffff)/(NUM_FLOATS);
 
     if (i < ndata && refVal != dataVal && i < error.pos) {
       error.pos = i;
@@ -208,7 +209,7 @@ template<typename T> bool TensorTester::checkTranspose(int rank, int* dim, int* 
         error = h_error[i];
       }
     }
-    printf("TensorTester::checkTranspose FAIL at %d ref %d data %d\n", error.pos, error.refVal, error.dataVal);
+    printf("TensorTester::checkTranspose FAIL at %llu ref %d data %d\n", error.pos, error.refVal, error.dataVal);
     return false;
   }
 
@@ -216,5 +217,6 @@ template<typename T> bool TensorTester::checkTranspose(int rank, int* dim, int* 
 }
 
 // Explicit instances
+template bool TensorTester::checkTranspose<short>(int rank, int* dim, int* permutation, short* data);
 template bool TensorTester::checkTranspose<int>(int rank, int* dim, int* permutation, int* data);
 template bool TensorTester::checkTranspose<long long int>(int rank, int* dim, int* permutation, long long int* data);

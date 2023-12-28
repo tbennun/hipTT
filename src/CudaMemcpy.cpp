@@ -144,8 +144,10 @@ void memcpyFloat(const int n, float* data_in, float* data_out, hipStream_t strea
 // -----------------------------------------------------------------------------------
 
 // Explicit instances
+template void scalarCopy<short>(const int n, const short* data_in, short* data_out, hipStream_t stream);
 template void scalarCopy<int>(const int n, const int* data_in, int* data_out, hipStream_t stream);
 template void scalarCopy<long long int>(const int n, const long long int* data_in, long long int* data_out, hipStream_t stream);
+template void vectorCopy<short>(const int n, short* data_in, short* data_out, hipStream_t stream);
 template void vectorCopy<int>(const int n, int* data_in, int* data_out, hipStream_t stream);
 template void vectorCopy<long long int>(const int n, long long int* data_in, long long int* data_out, hipStream_t stream);
 void memcpyFloat(const int n, float* data_in, float* data_out, hipStream_t stream);
