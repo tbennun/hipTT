@@ -126,11 +126,11 @@ lib/libcutt.a: $(OBJSLIB)
 
 bin/cutt_test : lib/libcutt.a $(OBJSTEST)
 	mkdir -p bin
-	$(HOST_CC) -o bin/cutt_test -L/opt/rocm-3.9.0/lib/ -lamdhip64 $(OBJSTEST) -Llib -lcutt $(CUDA_LFLAGS)
+	$(HOST_CC) -o bin/cutt_test -lamdhip64 $(OBJSTEST) -Llib -lcutt $(CUDA_LFLAGS)
 
 bin/cutt_bench : lib/libcutt.a $(OBJSBENCH)
 	mkdir -p bin
-	$(HOST_CC) -o bin/cutt_bench -L/opt/rocm-3.9.0/lib/ -lamdhip64 $(OBJSBENCH) -Llib -lcutt $(CUDA_LFLAGS)
+	$(HOST_CC) -o bin/cutt_bench -lamdhip64 $(OBJSBENCH) -Llib -lcutt $(CUDA_LFLAGS)
 
 clean:
 	rm -f $(OBJS)
